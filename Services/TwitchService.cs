@@ -1,5 +1,10 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.IO;
+using System.Reflection;
+using System.Threading.Tasks;
+using Twitch.DataStrucs;
+using Twitch.Modules;
 using TwitchLib.Client;
 using TwitchLib.Client.Events;
 using TwitchLib.Client.Models;
@@ -11,16 +16,23 @@ namespace Twitch.Services
     class TwitchService
     {
         private TwitchClient _client;
+        private Commands _commands;
+
+        public TwitchService(IServiceProvider serviceProvider)
+        {
+            _commands = serviceProvider.GetRequiredService<Commands>();
+        }
+
         public void Initialize()
         {
-            ConnectionCredentials credentials = new ConnectionCredentials("xdenkata_", File.ReadAllText(@"dev/token.txt"));
+            ConnectionCredentials credentials = new("xdenkata_", File.ReadAllText(@"dev/token.txt"));
             var clientOptions = new ClientOptions
             {
                 MessagesAllowedInPeriod = 750,
                 ThrottlingPeriod = TimeSpan.FromSeconds(30)
             };
 
-            WebSocketClient customClient = new WebSocketClient(clientOptions);
+            WebSocketClient customClient = new(clientOptions);
             _client = new TwitchClient(customClient);
             SubscribeEvents();
             _client.Initialize(credentials, "xdenkata_");
@@ -63,33 +75,42 @@ namespace Twitch.Services
             //Execute Command
             var result = ExecuteCommand(e.ChatMessage, command, param);
 
-            //If task was successful
-            if (result.isSuccessful)
+            //If task was successful OR the reason is CommandNotFound
+            if (result.isSuccessful || result.reason == Reason.CommandNotFound)
                 return;
 
             //Log Exception
             LoggingService.Log($"{e.ChatMessage.Username} => {e.ChatMessage.Message} => {result.exception.StackTrace}", "CommandHandler", ConsoleColor.Red, result.exception);
         }
 
-        public Result ExecuteCommand(ChatMessage messageContext, string command, string param)
+        public CommandExecutionResult ExecuteCommand(ChatMessage messageContext, string command, string param)
         {
             try
             {
-                switch (command)
+                switch (command.ToLower())
                 {
+                    // For now commands can be added here in cases
                     case "os":
-                        _client.SendMessage(messageContext.Channel, $"I'm running on {Environment.OSVersion}");
+                        Reply(messageContext.Channel, _commands.GetOS());
                         break;
                     default:
-                        return new Result { isSuccessful = false };
+                        return new CommandExecutionResult { isSuccessful = false, reason = Reason.CommandNotFound };
                 }
-                return new Result { isSuccessful = true };
+                return new CommandExecutionResult { isSuccessful = true };
             }
             catch (Exception e)
             {
                 //Return Exception
-                return new Result { isSuccessful = false, exception = e };
+                return new CommandExecutionResult { isSuccessful = false, exception = e, reason = Reason.ExecutionError };
             }
         }
+
+        /// <summary>
+        /// Sends message to specified channel
+        /// </summary>
+        /// <param name="channel">The channel in which the message will be sent</param>
+        /// <param name="message">The message</param>
+        private void Reply(string channel, string message)
+            => _client.SendMessage(channel, message);
     }
 }
