@@ -4,7 +4,7 @@ using System.Threading;
 public class LoggingService
 {
     private static BlockingCollection<Log> logQueue = new BlockingCollection<Log>();
-    public static void Load()
+    public static void Initialize()
     {
         Thread thread = new Thread(() =>
         {
